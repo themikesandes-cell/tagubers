@@ -18,6 +18,10 @@ const profileDir = path.resolve(process.env.PROFILE_DIR || './profiles');
 fs.mkdirSync(uploadDir, { recursive: true });
 fs.mkdirSync(profileDir, { recursive: true });
 
+function paramString(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+}
+
 // Railway/TypeScript: keep CORS origin as a single string (or allow all when unset).
 const corsOrigin = process.env.CORS_ORIGIN?.trim() || true;
 app.use(cors({ origin: corsOrigin }));
@@ -89,7 +93,7 @@ app.post('/api/clientes', auth, adminOnly, async (req, res) => {
 app.put('/api/clientes/:id', auth, adminOnly, async (req, res) => {
   const parsed = z.object({ nome: z.string().min(1), codigo: z.string().optional(), observacao: z.string().optional(), ativo: z.boolean().optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Dados inválidos.' });
-  res.json(await prisma.cliente.update({ where: { id: req.params.id }, data: parsed.data }));
+  res.json(await prisma.cliente.update({ where: { id: paramString(req.params.id) }, data: parsed.data }));
 });
 
 app.get('/api/admin/users', auth, adminOnly, async (_req, res) => {
@@ -109,14 +113,14 @@ app.post('/api/admin/users', auth, adminOnly, async (req, res) => {
 app.put('/api/admin/users/:id', auth, adminOnly, async (req, res) => {
   const parsed = z.object({ nome: z.string().min(1).optional(), cargo: z.string().optional(), perfil: z.enum(['ADMIN', 'COLABORADOR']).optional(), ativo: z.boolean().optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Dados inválidos.' });
-  res.json(await prisma.user.update({ where: { id: req.params.id }, data: parsed.data, select: { id: true, nome: true, email: true, cargo: true, perfil: true, ativo: true } }));
+  res.json(await prisma.user.update({ where: { id: paramString(req.params.id) }, data: parsed.data, select: { id: true, nome: true, email: true, cargo: true, perfil: true, ativo: true } }));
 });
 
 app.get('/api/visitas', auth, loadCurrentUser, async (req, res) => {
   const where: any = req.user!.perfil === 'ADMIN' ? {} : { colaboradorId: req.user!.id };
   if (req.query.status) where.status = String(req.query.status).toUpperCase();
   if (req.query.clienteId) where.clienteId = String(req.query.clienteId);
-  const visitas = await prisma.visita.findMany({ where, include: { cliente: true, colaborador: { select: { id: true, nome: true, fotoUrl: true } }, despesas: true }, orderBy: { dataVisita: 'desc' } });
+  const visitas: any[] = await prisma.visita.findMany({ where, include: { cliente: true, colaborador: { select: { id: true, nome: true, fotoUrl: true } }, despesas: true }, orderBy: { dataVisita: 'desc' } });
   res.json(visitas.map(v => ({ ...v, total: Number(v.total), despesas: v.despesas.map(d => ({ ...d, valor: Number(d.valor) })) })));
 });
 
@@ -130,7 +134,7 @@ app.post('/api/visitas', auth, loadCurrentUser, async (req, res) => {
 });
 
 async function uploadReceipt(req: express.Request, res: express.Response, visitaId: string, tipo: 'IDA' | 'VOLTA') {
-  const visit = await prisma.visita.findUnique({ where: { id: visitaId }, include: { despesas: true } });
+  const visit: any = await prisma.visita.findUnique({ where: { id: visitaId }, include: { despesas: true } });
   if (!visit) return res.status(404).json({ error: 'Visita não encontrada.' });
   if (req.user!.perfil !== 'ADMIN' && visit.colaboradorId !== req.user!.id) return res.status(403).json({ error: 'Sem permissão.' });
   if (visit.status !== 'RASCUNHO' && req.user!.perfil !== 'ADMIN') return res.status(400).json({ error: 'A prestação não está disponível para edição.' });
@@ -147,13 +151,13 @@ async function uploadReceipt(req: express.Request, res: express.Response, visita
 }
 
 app.post('/api/visitas/:id/comprovante/:tipo', auth, loadCurrentUser, async (req, res) => {
-  const tipo = String(req.params.tipo).toUpperCase();
+  const tipo = String(paramString(req.params.tipo)).toUpperCase();
   if (!['IDA','VOLTA'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido.' });
-  return uploadReceipt(req, res, req.params.id, tipo as 'IDA'|'VOLTA');
+  return uploadReceipt(req, res, paramString(req.params.id), tipo as 'IDA'|'VOLTA');
 });
 
 app.post('/api/visitas/:id/submit', auth, loadCurrentUser, async (req, res) => {
-  const v = await prisma.visita.findUnique({ where: { id: req.params.id }, include: { despesas: true } });
+  const v: any = await prisma.visita.findUnique({ where: { id: paramString(req.params.id) }, include: { despesas: true } });
   if (!v || (req.user!.perfil !== 'ADMIN' && v.colaboradorId !== req.user!.id)) return res.status(404).json({ error: 'Visita não encontrada.' });
   if (v.status !== 'RASCUNHO' && v.status !== 'REPROVADO') return res.status(400).json({ error: 'Esta visita não pode ser enviada agora.' });
   const ida = v.despesas.find(d => d.tipo === 'IDA');
@@ -167,7 +171,7 @@ app.post('/api/visitas/:id/submit', auth, loadCurrentUser, async (req, res) => {
 });
 
 app.get('/api/files/:filename', auth, loadCurrentUser, async (req, res) => {
-  const filename = path.basename(req.params.filename);
+  const filename = path.basename(paramString(req.params.filename));
   const filePath = path.join(uploadDir, filename);
   const expense = await prisma.despesa.findFirst({ where: { comprovanteUrl: `/files/${filename}` }, include: { visita: true } });
   if (!expense) return res.status(404).json({ error: 'Arquivo não encontrado.' });
@@ -177,26 +181,26 @@ app.get('/api/files/:filename', auth, loadCurrentUser, async (req, res) => {
 });
 
 app.get('/api/visitas/:id', auth, loadCurrentUser, async (req, res) => {
-  const v = await prisma.visita.findUnique({ where: { id: req.params.id }, include: { cliente: true, colaborador: { select: { id: true, nome: true, email: true, cargo: true, fotoUrl: true } }, despesas: true, aprovadoPor: { select: { nome: true } } } });
+  const v: any = await prisma.visita.findUnique({ where: { id: paramString(req.params.id) }, include: { cliente: true, colaborador: { select: { id: true, nome: true, email: true, cargo: true, fotoUrl: true } }, despesas: true, aprovadoPor: { select: { nome: true } } } });
   if (!v) return res.status(404).json({ error: 'Visita não encontrada.' });
   if (req.user!.perfil !== 'ADMIN' && v.colaboradorId !== req.user!.id) return res.status(403).json({ error: 'Sem permissão.' });
   res.json({ ...v, total: Number(v.total), despesas: v.despesas.map(d => ({ ...d, valor: Number(d.valor) })) });
 });
 
 app.post('/api/visitas/:id/approve', auth, adminOnly, async (req, res) => {
-  const v = await prisma.visita.update({ where: { id: req.params.id }, data: { status: 'APROVADO', aprovadoEm: new Date(), aprovadoPorId: req.user!.id, motivoReprovacao: null } });
+  const v = await prisma.visita.update({ where: { id: paramString(req.params.id) }, data: { status: 'APROVADO', aprovadoEm: new Date(), aprovadoPorId: req.user!.id, motivoReprovacao: null } });
   res.json(v);
 });
 
 app.post('/api/visitas/:id/reject', auth, adminOnly, async (req, res) => {
   const parsed = z.object({ motivo: z.string().min(3) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Informe o motivo.' });
-  const v = await prisma.visita.update({ where: { id: req.params.id }, data: { status: 'REPROVADO', motivoReprovacao: parsed.data.motivo, aprovadoEm: null, aprovadoPorId: null } });
+  const v = await prisma.visita.update({ where: { id: paramString(req.params.id) }, data: { status: 'REPROVADO', motivoReprovacao: parsed.data.motivo, aprovadoEm: null, aprovadoPorId: null } });
   res.json(v);
 });
 
 app.post('/api/visitas/:id/resubmit', auth, loadCurrentUser, async (req, res) => {
-  const v = await prisma.visita.findUnique({ where: { id: req.params.id } });
+  const v = await prisma.visita.findUnique({ where: { id: paramString(req.params.id) } });
   if (!v || v.colaboradorId !== req.user!.id) return res.status(404).json({ error: 'Visita não encontrada.' });
   if (v.status !== 'REPROVADO') return res.status(400).json({ error: 'Somente prestações reprovadas podem ser reenviadas.' });
   await prisma.visita.update({ where: { id: v.id }, data: { status: 'AGUARDANDO', motivoReprovacao: null, enviadoEm: new Date() } });

@@ -92,3 +92,15 @@ Gere domínios do Railway para frontend e backend, ou conecte seu domínio próp
 Este MVP usa `prisma db push` no start para simplificar a primeira instalação; para evolução de schema em produção crítica, prefira Prisma Migrate. Antes de colocar em produção crítica, migre para Prisma Migrate, configure backups do PostgreSQL e considere Storage S3/R2 para grande volume de comprovantes.
 
 O upload aceita JPG, PNG e PDF e foi preparado para celular com câmera/galeria por meio de `<input type="file" accept="image/*,application/pdf" capture="environment">`.
+
+
+## Deploy no Railway (monorepo)
+
+Crie 3 serviços no mesmo projeto: `Backend`, `Frontend` e `PostgreSQL`.
+
+- Backend → **Root Directory:** `/backend`
+- Frontend → **Root Directory:** `/frontend`
+- Backend → `DATABASE_URL=${{Postgres.DATABASE_URL}}`
+- Backend → adicione um **Volume** montado em `/app/uploads` para persistir comprovantes e fotos de perfil.
+
+O backend usa `prisma generate && tsc` no build e o CLI do Prisma está nas dependências de produção para o comando de inicialização.
