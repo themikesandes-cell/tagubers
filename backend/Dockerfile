@@ -1,24 +1,28 @@
-FROM node:20-alpine
-
+FROM node:20-alpine AS build
 WORKDIR /app
-ENV NODE_ENV=production
-
 COPY package*.json ./
 RUN npm install
-
 COPY prisma ./prisma
 COPY tsconfig.json ./
 COPY src ./src
-
-# Generate Prisma Client during image build. DATABASE_URL is NOT required for generate.
 RUN npx prisma generate
 RUN npm run build
 
-RUN mkdir -p /app/uploads/profiles
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm install --omit=dev
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/prisma ./prisma
+# Prisma Client is generated during the build stage. Copy the generated runtime
+# artifacts because the production npm install creates a fresh node_modules.
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
+RUN mkdir -p /app/uploads
 ENV UPLOAD_DIR=/app/uploads
 ENV PROFILE_DIR=/app/uploads/profiles
-
-EXPOSE 8080
-
-# DATABASE_URL is supplied by Railway at runtime.
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/server.js"]
+RUN mkdir -p /app/uploads/profiles
+EXPOSE 4000
+COPY start.sh ./start.sh
+RUN chmod +x ./start.sh
+CMD ["./start.sh"]
