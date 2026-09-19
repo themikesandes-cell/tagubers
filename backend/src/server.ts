@@ -8,8 +8,11 @@ import fs from 'fs';
 import crypto from 'crypto';
 import fileUpload, { UploadedFile } from 'express-fileupload';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from './db';
 import { auth, adminOnly, loadCurrentUser, signToken } from './auth';
+
+type DespesaRecord = Prisma.DespesaGetPayload<{}>;
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -120,8 +123,8 @@ app.get('/api/visitas', auth, loadCurrentUser, async (req, res) => {
   const where: any = req.user!.perfil === 'ADMIN' ? {} : { colaboradorId: req.user!.id };
   if (req.query.status) where.status = String(req.query.status).toUpperCase();
   if (req.query.clienteId) where.clienteId = String(req.query.clienteId);
-  const visitas: any[] = await prisma.visita.findMany({ where, include: { cliente: true, colaborador: { select: { id: true, nome: true, fotoUrl: true } }, despesas: true }, orderBy: { dataVisita: 'desc' } });
-  res.json(visitas.map(v => ({ ...v, total: Number(v.total), despesas: v.despesas.map(d => ({ ...d, valor: Number(d.valor) })) })));
+  const visitas = await prisma.visita.findMany({ where, include: { cliente: true, colaborador: { select: { id: true, nome: true, fotoUrl: true } }, despesas: true }, orderBy: { dataVisita: 'desc' } });
+  res.json(visitas.map(v => ({ ...v, total: Number(v.total), despesas: v.despesas.map((d: DespesaRecord) => ({ ...d, valor: Number(d.valor) })) })));
 });
 
 app.post('/api/visitas', auth, loadCurrentUser, async (req, res) => {
@@ -134,7 +137,7 @@ app.post('/api/visitas', auth, loadCurrentUser, async (req, res) => {
 });
 
 async function uploadReceipt(req: express.Request, res: express.Response, visitaId: string, tipo: 'IDA' | 'VOLTA') {
-  const visit: any = await prisma.visita.findUnique({ where: { id: visitaId }, include: { despesas: true } });
+  const visit = await prisma.visita.findUnique({ where: { id: visitaId }, include: { despesas: true } });
   if (!visit) return res.status(404).json({ error: 'Visita não encontrada.' });
   if (req.user!.perfil !== 'ADMIN' && visit.colaboradorId !== req.user!.id) return res.status(403).json({ error: 'Sem permissão.' });
   if (visit.status !== 'RASCUNHO' && req.user!.perfil !== 'ADMIN') return res.status(400).json({ error: 'A prestação não está disponível para edição.' });
@@ -145,7 +148,7 @@ async function uploadReceipt(req: express.Request, res: express.Response, visita
   const ext = path.extname(file.name).toLowerCase() || (file.mimetype === 'application/pdf' ? '.pdf' : '.jpg');
   const filename = `${crypto.randomUUID()}${ext}`;
   await file.mv(path.join(uploadDir, filename));
-  const expense = visit.despesas.find(d => d.tipo === tipo) || await prisma.despesa.create({ data: { visitaId, tipo, categoria: 'Uber', valor: 0 } });
+  const expense = visit.despesas.find((d: DespesaRecord) => d.tipo === tipo) || await prisma.despesa.create({ data: { visitaId, tipo, categoria: 'Uber', valor: 0 } });
   const updated = await prisma.despesa.update({ where: { id: expense.id }, data: { comprovanteUrl: `/files/${filename}` } });
   res.json(updated);
 }
@@ -157,15 +160,15 @@ app.post('/api/visitas/:id/comprovante/:tipo', auth, loadCurrentUser, async (req
 });
 
 app.post('/api/visitas/:id/submit', auth, loadCurrentUser, async (req, res) => {
-  const v: any = await prisma.visita.findUnique({ where: { id: paramString(req.params.id) }, include: { despesas: true } });
+  const v = await prisma.visita.findUnique({ where: { id: paramString(req.params.id) }, include: { despesas: true } });
   if (!v || (req.user!.perfil !== 'ADMIN' && v.colaboradorId !== req.user!.id)) return res.status(404).json({ error: 'Visita não encontrada.' });
   if (v.status !== 'RASCUNHO' && v.status !== 'REPROVADO') return res.status(400).json({ error: 'Esta visita não pode ser enviada agora.' });
-  const ida = v.despesas.find(d => d.tipo === 'IDA');
-  const volta = v.despesas.find(d => d.tipo === 'VOLTA');
+  const ida = v.despesas.find((d: DespesaRecord) => d.tipo === 'IDA');
+  const volta = v.despesas.find((d: DespesaRecord) => d.tipo === 'VOLTA');
   if (!ida || !volta || Number(ida.valor) <= 0 || Number(volta.valor) <= 0 || !ida.comprovanteUrl || !volta.comprovanteUrl) {
     return res.status(400).json({ error: 'É necessário informar ida e volta com valores e comprovantes.' });
   }
-  const total = v.despesas.reduce((sum, d) => sum + Number(d.valor), 0);
+  const total = v.despesas.reduce((sum: number, d: DespesaRecord) => sum + Number(d.valor), 0);
   const updated = await prisma.visita.update({ where: { id: v.id }, data: { total, status: 'AGUARDANDO', enviadoEm: new Date(), motivoReprovacao: null } });
   res.json(updated);
 });
@@ -181,10 +184,10 @@ app.get('/api/files/:filename', auth, loadCurrentUser, async (req, res) => {
 });
 
 app.get('/api/visitas/:id', auth, loadCurrentUser, async (req, res) => {
-  const v: any = await prisma.visita.findUnique({ where: { id: paramString(req.params.id) }, include: { cliente: true, colaborador: { select: { id: true, nome: true, email: true, cargo: true, fotoUrl: true } }, despesas: true, aprovadoPor: { select: { nome: true } } } });
+  const v = await prisma.visita.findUnique({ where: { id: paramString(req.params.id) }, include: { cliente: true, colaborador: { select: { id: true, nome: true, email: true, cargo: true, fotoUrl: true } }, despesas: true, aprovadoPor: { select: { nome: true } } } });
   if (!v) return res.status(404).json({ error: 'Visita não encontrada.' });
   if (req.user!.perfil !== 'ADMIN' && v.colaboradorId !== req.user!.id) return res.status(403).json({ error: 'Sem permissão.' });
-  res.json({ ...v, total: Number(v.total), despesas: v.despesas.map(d => ({ ...d, valor: Number(d.valor) })) });
+  res.json({ ...v, total: Number(v.total), despesas: v.despesas.map((d: DespesaRecord) => ({ ...d, valor: Number(d.valor) })) });
 });
 
 app.post('/api/visitas/:id/approve', auth, adminOnly, async (req, res) => {
@@ -223,7 +226,7 @@ app.get('/api/admin/relatorio', auth, adminOnly, async (req, res) => {
   const inicio = req.query.inicio ? new Date(String(req.query.inicio)) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const fim = req.query.fim ? new Date(String(req.query.fim)) : new Date(); fim.setHours(23,59,59,999);
   const visitas = await prisma.visita.findMany({ where: { dataVisita: { gte: inicio, lte: fim } }, include: { cliente: true, colaborador: { select: { nome: true } }, despesas: true }, orderBy: { dataVisita: 'desc' } });
-  const rows = visitas.map(v => ({ data: v.dataVisita.toISOString().slice(0,10), colaborador: v.colaborador.nome, cliente: v.cliente.nome, total: Number(v.total), status: v.status, ida: v.despesas.filter(d => d.tipo === 'IDA').reduce((s,d)=>s+Number(d.valor),0), volta: v.despesas.filter(d => d.tipo === 'VOLTA').reduce((s,d)=>s+Number(d.valor),0) }));
+  const rows = visitas.map(v => ({ data: v.dataVisita.toISOString().slice(0,10), colaborador: v.colaborador.nome, cliente: v.cliente.nome, total: Number(v.total), status: v.status, ida: v.despesas.filter((d: DespesaRecord) => d.tipo === 'IDA').reduce((sum: number, d: DespesaRecord) => sum + Number(d.valor), 0), volta: v.despesas.filter((d: DespesaRecord) => d.tipo === 'VOLTA').reduce((sum: number, d: DespesaRecord) => sum + Number(d.valor), 0) }));
   res.json(rows);
 });
 
