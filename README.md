@@ -104,3 +104,16 @@ Crie 3 serviços no mesmo projeto: `Backend`, `Frontend` e `PostgreSQL`.
 - Backend → adicione um **Volume** montado em `/app/uploads` para persistir comprovantes e fotos de perfil.
 
 O backend usa `prisma generate && tsc` no build e o CLI do Prisma está nas dependências de produção para o comando de inicialização.
+
+
+## Railway — configuração atual
+
+Este repositório é um monorepo. Crie três serviços no mesmo projeto Railway:
+
+- **Backend**: Root Directory `/backend`
+- **Frontend**: Root Directory `/frontend`
+- **PostgreSQL**: banco do projeto
+
+No Backend, use as variáveis `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` e `PORT`. O backend inicia o HTTP imediatamente em `0.0.0.0` e tenta conectar/sincronizar o banco em segundo plano.
+
+Para persistir os comprovantes e fotos, adicione um Volume ao Backend montado em `/app/uploads`.

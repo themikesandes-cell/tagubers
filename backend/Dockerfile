@@ -20,4 +20,6 @@ ENV UPLOAD_DIR=/app/uploads
 ENV PROFILE_DIR=/app/uploads/profiles
 RUN mkdir -p /app/uploads/profiles
 EXPOSE 4000
-CMD ["node", "dist/server.js"]
+COPY start.sh ./start.sh
+RUN chmod +x ./start.sh
+CMD ["./start.sh"]

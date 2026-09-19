@@ -235,16 +235,38 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ error: 'Erro interno do servidor.' });
 });
 
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function bootstrap() {
   const email = (process.env.ADMIN_EMAIL || 'admin@empresa.com').toLowerCase();
   const password = process.env.ADMIN_PASSWORD || 'Admin@123456';
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (!existing) {
-    const senhaHash = await bcrypt.hash(password, 12);
-    await prisma.user.create({ data: { nome: 'Administrador', email, senhaHash, perfil: 'ADMIN', ativo: true } });
-    console.log(`Admin inicial criado: ${email}`);
+
+  // Keep the HTTP server available to Railway immediately. Database initialization
+  // can take a few seconds while PostgreSQL becomes ready.
+  for (;;) {
+    try {
+      await prisma.$connect();
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (!existing) {
+        const senhaHash = await bcrypt.hash(password, 12);
+        await prisma.user.create({ data: { nome: 'Administrador', email, senhaHash, perfil: 'ADMIN', ativo: true } });
+        console.log(`Admin inicial criado: ${email}`);
+      }
+      console.log('Banco de dados conectado.');
+      break;
+    } catch (err) {
+      console.error('Banco ainda não está pronto. Nova tentativa em 5s.', err);
+      await sleep(5000);
+    }
   }
-  app.listen(port, () => console.log(`API rodando na porta ${port}`));
 }
 
-bootstrap().catch(err => { console.error(err); process.exit(1); });
+app.listen(port, '0.0.0.0', () => {
+  console.log(`API rodando na porta ${port}`);
+});
+
+bootstrap().catch(err => {
+  console.error('Falha inesperada na inicialização do backend:', err);
+});
