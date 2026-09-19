@@ -14,9 +14,13 @@ import { auth, adminOnly, loadCurrentUser, signToken } from './auth';
 const app = express();
 const port = Number(process.env.PORT || 4000);
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || './uploads');
+const profileDir = path.resolve(process.env.PROFILE_DIR || './profiles');
 fs.mkdirSync(uploadDir, { recursive: true });
+fs.mkdirSync(profileDir, { recursive: true });
 
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',').map(s => s.trim()) || true }));
+// Railway/TypeScript: keep CORS origin as a single string (or allow all when unset).
+const corsOrigin = process.env.CORS_ORIGIN?.trim() || true;
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '2mb' }));
 app.use(fileUpload({
   limits: { fileSize: 8 * 1024 * 1024 },
@@ -24,7 +28,7 @@ app.use(fileUpload({
   createParentPath: true
 }));
 
-app.use('/profiles', express.static(uploadDir));
+app.use('/profiles', express.static(profileDir));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'backend' }));
 
@@ -61,7 +65,7 @@ app.post('/api/me/profile', auth, loadCurrentUser, async (req, res) => {
   if (file) {
     const ext = path.extname(file.name).toLowerCase() || '.jpg';
     const filename = `${crypto.randomUUID()}${ext}`;
-    await file.mv(path.join(uploadDir, filename));
+    await file.mv(path.join(profileDir, filename));
     fotoUrl = `/profiles/${filename}`;
   }
   const data: any = {};
