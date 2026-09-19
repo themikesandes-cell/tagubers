@@ -1,5 +1,8 @@
 #!/bin/sh
-set -u
+set -eu
+
+echo "Gerando Prisma Client no container de produção..."
+npx prisma generate --schema=prisma/schema.prisma
 
 echo "Iniciando sincronização do schema Prisma em segundo plano..."
 (

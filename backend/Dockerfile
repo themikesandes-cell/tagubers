@@ -15,6 +15,9 @@ COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+# Prisma Client is generated during the build stage. Copy the generated runtime
+# artifacts because the production npm install creates a fresh node_modules.
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 RUN mkdir -p /app/uploads
 ENV UPLOAD_DIR=/app/uploads
 ENV PROFILE_DIR=/app/uploads/profiles
