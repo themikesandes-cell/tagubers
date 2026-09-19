@@ -117,3 +117,7 @@ Este repositório é um monorepo. Crie três serviços no mesmo projeto Railway:
 No Backend, use as variáveis `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` e `PORT`. O backend inicia o HTTP imediatamente em `0.0.0.0` e tenta conectar/sincronizar o banco em segundo plano.
 
 Para persistir os comprovantes e fotos, adicione um Volume ao Backend montado em `/app/uploads`.
+
+
+### Backend simplificado
+A imagem do backend agora usa um único estágio Docker. O Prisma Client é gerado dentro do mesmo container que executa a API, evitando o erro `@prisma/client did not initialize yet`.
